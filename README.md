@@ -1,34 +1,51 @@
 # CEFIN Automatizaciones
 
-Aplicación interna para crear, revisar y administrar secuencias programadas de mensajes destinadas a grupos de distintas líneas o marcas.
+Aplicación interna para crear y administrar secuencias programadas de mensajes por línea o marca. El repositorio contiene el frontend V1.1 y, desde V2.1A, una API independiente preparada para Railway y PostgreSQL.
 
-> **La V1.1 no realiza envíos reales de WhatsApp.** Todos los estados y resultados de envío son simulaciones locales.
+> No se realizan envíos reales. El frontend continúa usando datos JSON, autenticación demo y `MockMessagingProvider` mientras se valida el flujo Backend → PostgreSQL.
 
-## Alcance V1.1
+## Arquitectura actual
 
-La aplicación soporta múltiples líneas con aislamiento de grupos, automatizaciones e historial. Incluye autenticación demo, selector global de línea, dashboard contextual, CRUD de automatizaciones, administración de líneas y persistencia JSON server-side.
+```text
+Frontend Next.js (Vercel)
+        │ futura integración HTTP
+        ▼
+API Fastify (Railway)
+        │ DATABASE_URL privada
+        ▼
+PostgreSQL (Railway)
+```
 
-Líneas demo iniciales:
+La API no se conecta todavía al frontend productivo. Ambos runtimes son independientes y pueden desplegarse desde este mismo repositorio.
 
-- CEFIN
-- Cressara
-- EBIA
-- DocLevel
+## Estructura
 
-Las líneas viven en la capa de datos y pueden crearse, renombrarse, activarse y desactivarse desde `/lineas`. No son constantes permanentes del producto.
+```text
+app/                         Frontend Next.js y rutas demo existentes
+components/                  Interfaz V1.1
+lib/
+  auth/                      Autenticación demo
+  data/                      Seeds JSON multilínea
+  domain/                    Dominio usado por el frontend
+  messaging/                 MockMessagingProvider
+  repositories/              AppRepository/JsonAppRepository del frontend
+backend/
+  drizzle/                   Migraciones SQL y metadatos versionados
+  src/
+    config/                  Variables de entorno
+    db/                      Schema Drizzle, conexión y seed explícito
+    domain/                  Tipos y errores de la API
+    http/                    Rutas y validación de DTOs
+    repositories/            Contrato y PostgresAppRepository
+    services/                Reglas de negocio multilínea
+  test/                      Pruebas unitarias, HTTP e integración opcional
+```
 
-## Stack
+Se eligió Fastify 5 por su runtime ligero, logging integrado, cierre ordenado y buen encaje con TypeScript. Se eligió Drizzle ORM porque mantiene el esquema SQL explícito y tipado, produce migraciones revisables y deja el acceso PostgreSQL encapsulado; esto facilita reutilizar el repositorio desde un worker futuro sin acoplar el dominio al ORM.
 
-- Next.js 16 con App Router
-- React 19
-- TypeScript estricto
-- Tailwind CSS 4 y estilos propios
-- ESLint 9
-- Persistencia JSON local del lado servidor
+## Frontend V1.1
 
-No se agregaron dependencias a las incluidas por `create-next-app`.
-
-## Instalación y ejecución
+Requisitos: Node.js 20 o superior.
 
 ```bash
 npm install
@@ -44,70 +61,152 @@ Correo: admin@cefin.com.mx
 Contraseña: demo2026
 ```
 
-La sesión demo y la línea activa utilizan cookies `httpOnly`. No se usa `localStorage`. La autenticación no es apta para producción.
+La sesión demo y la línea activa usan cookies `httpOnly`. La persistencia sigue en `.data/mvp-state.json` mediante `JsonAppRepository`; no es autenticación ni almacenamiento apto para producción.
 
-## Arquitectura
+## Backend V2.1A
 
-```text
-app/
-  (app)/                   Vistas internas protegidas
-  api/auth/                Inicio y cierre de sesión demo
-  api/state/               Datos y cookie de línea activa
-components/                Shell, selector global y flujos interactivos
-lib/
-  auth/                    Configuración de autenticación demo
-  data/                    Seeds multilínea
-  domain/                  Entidades, invariantes, catálogos y fechas
-  messaging/               Contrato MessagingProvider y provider mock
-  repositories/            Contrato e implementación JSON
-proxy.ts                   Protección de rutas
+La API requiere Node.js 20 o superior y una instancia PostgreSQL accesible.
+
+```bash
+cd backend
+npm install
+Copy-Item .env.example .env
+npm run dev
 ```
 
-## Modelo multilínea
+En macOS/Linux, sustituye `Copy-Item` por `cp`. Completa `DATABASE_URL` únicamente en `backend/.env`; ese archivo está ignorado por Git.
 
-`Line` es la entidad central. `Group`, `Automation` y `EventLog` requieren `lineId`; los disparos pertenecen a una automatización y no duplican esa relación.
+Variables:
 
-La validación de dominio y repositorio impide guardar una automatización con grupos de otra línea, exige slugs únicos y evita desactivar la última línea activa. Una línea inactiva desaparece del selector de trabajo, pero conserva sus datos y permanece visible en administración.
+```dotenv
+DATABASE_URL=
+APP_ORIGIN=http://localhost:3000
+PORT=3001
+NODE_ENV=development
+```
 
-El JSON V1 se migra automáticamente al esquema V1.1 al leerlo: los datos existentes se conservan bajo CEFIN y se agregan los seeds de las líneas restantes. Las escrituras continúan serializadas en `.data/mvp-state.json`, archivo ignorado por Git.
+`APP_ORIGIN` acepta uno o varios orígenes separados por coma. Para Vercel se debe usar el dominio HTTPS exacto, sin habilitar `*` en producción. La API escucha en `0.0.0.0` y respeta `PORT`.
 
-## Etiquetas oficiales
+Comandos desde la raíz:
 
-- Preventa (`PREVENTA`)
-- Venta (`VENTA`)
-- Retargeting (`RETARGETING`)
-- Calentamiento (`CALENTAMIENTO`)
+```bash
+npm run backend:dev
+npm run backend:lint
+npm run backend:typecheck
+npm run backend:test
+npm run backend:build
+npm run db:migrate
+npm run db:seed
+```
 
-Las etiquetas son globales y no pertenecen a una línea.
+Comandos adicionales dentro de `backend/`:
 
-## Mensajería
+```bash
+npm run db:generate   # genera una migración a partir del schema
+npm run db:migrate    # aplica migraciones pendientes de forma explícita
+npm run db:seed       # inserta datos demo idempotentes
+npm run db:studio     # inspección manual con Drizzle Studio
+```
 
-`MessagingProvider` recibe contexto de línea y mantiene el límite de integración mediante:
+Ni las migraciones ni el seed se ejecutan al iniciar la API.
 
-- `listGroups(lineId)`
-- `scheduleMessage()`
-- `cancelScheduledMessage()`
-- `healthCheck()`
+## Modelo PostgreSQL
 
-La única implementación es `MockMessagingProvider`. Filtra grupos por línea, no hace solicitudes externas y nunca transmite mensajes. No existe `FunnelchatMessagingProvider` ni conexión activa con WhatsApp Business.
+La migración inicial crea:
 
-## Scripts de calidad
+- `users` y `user_lines`, con roles `ADMIN`, `OPERATOR` y `VIEWER`.
+- `lines` con slug único.
+- `groups` ligados obligatoriamente a una línea.
+- `automations`, `automation_groups` y `triggers`.
+- `event_logs` para auditoría.
+
+Los IDs son UUID, las fechas son `timestamptz` y los metadatos son `jsonb`. Los índices cubren línea/estado de automatizaciones, agenda/estado de disparadores y línea/fecha de eventos. `automation_groups` incluye un `line_id` técnico y dos claves foráneas compuestas: PostgreSQL rechaza una asociación cuando el grupo y la automatización no pertenecen a la misma línea, además de la validación equivalente del servicio.
+
+El índice compuesto `(status, scheduled_at)` prepara la consulta de trabajo futura (`PENDING` y fecha vencida), pero V2.1A no incluye scheduler, locking, reintentos ni entregas.
+
+## API v1
+
+```text
+GET    /health
+GET    /api/v1/lines
+GET    /api/v1/lines/:lineId/groups
+GET    /api/v1/lines/:lineId/automations
+GET    /api/v1/automations/:id
+POST   /api/v1/automations
+PATCH  /api/v1/automations/:id
+POST   /api/v1/automations/:id/duplicate
+POST   /api/v1/automations/:id/pause
+POST   /api/v1/automations/:id/resume
+POST   /api/v1/automations/:id/cancel
+GET    /api/v1/lines/:lineId/events
+```
+
+Los DTO validan UUID, nombres, enums, listas, contenido y fechas ISO 8601 con zona horaria. Los errores públicos usan un contrato estable:
+
+```json
+{
+  "error": {
+    "code": "AUTOMATION_NOT_FOUND",
+    "message": "Automatización no encontrada"
+  }
+}
+```
+
+### Health check
+
+```bash
+curl http://localhost:3001/health
+```
+
+Con PostgreSQL disponible responde HTTP 200:
+
+```json
+{ "status": "ok", "database": "connected" }
+```
+
+Si la conexión falla responde HTTP 503 sin exponer la URL, credenciales ni error SQL.
+
+## Seeds
+
+El seed explícito prepara CEFIN, Cressara, EBIA y DocLevel, dos grupos por línea, automatizaciones, triggers y eventos. También crea un usuario técnico con dominio de correo inválido y el literal `NOT_A_REAL_PASSWORD_HASH_V2_1A`; no contiene una contraseña utilizable.
+
+## Despliegue en Railway
+
+1. Crea un servicio desde este mismo repositorio GitHub.
+2. Configura `backend` como directorio raíz del servicio.
+3. Usa `npm run build` como comando de build y `npm run start` como comando de inicio.
+4. Define `NODE_ENV=production`, `APP_ORIGIN=https://<dominio-vercel>` y la referencia privada que el servicio PostgreSQL exponga como `DATABASE_URL`.
+5. En el servicio de API, ejecuta una vez `npm run db:migrate` y después, solo si deseas los datos demo, `npm run db:seed`.
+6. Valida `/health` desde el dominio público de la API.
+
+Railway puede mostrar una referencia similar a `${{ Postgres.DATABASE_PRIVATE_URL }}`, pero el nombre depende del servicio y de las variables que realmente exponga el proyecto. Selecciona la URL privada desde el panel de variables; no habilites acceso público a PostgreSQL ni copies secretos al repositorio.
+
+## Calidad
+
+Frontend:
 
 ```bash
 npm run lint
 npx tsc --noEmit
 npm run build
-git diff --check
 ```
 
-## Limitaciones actuales
+Backend:
 
-- Autenticación exclusivamente demostrativa.
-- Persistencia JSON solo para desarrollo local, sin concurrencia distribuida.
-- Los adjuntos guardan únicamente metadata; no se suben archivos.
-- No existen Supabase, PostgreSQL, Funnelchat, WhatsApp real, IA, Meta Ads ni n8n.
-- No existe un worker de ejecución; la programación solo simula estados.
+```bash
+npm run backend:lint
+npm run backend:typecheck
+npm run backend:test
+npm run backend:build
+```
 
-## Siguiente etapa técnica
+La prueba PostgreSQL real se activa solo con `TEST_DATABASE_URL`; sin esa variable se omite para no depender de infraestructura externa.
 
-Después de aprobar funcional y visualmente V1.1, definir el esquema PostgreSQL/Supabase para `Line`, `User`, `Group`, `Automation`, `AutomationGroup`, `Trigger` y `EventLog`, conservando las invariantes multilínea ya implementadas.
+## Límites deliberados de V2.1A
+
+- El frontend continúa con `JsonAppRepository`; aún no consume la API.
+- El login sigue siendo demo; `users`, `user_lines` y roles solo preparan V2.1B.
+- `MockMessagingProvider` sigue siendo la única implementación.
+- No hay Funnelchat, WhatsApp real, IA, n8n ni envíos externos.
+- No existe worker/scheduler.
+- No se requiere Docker.
