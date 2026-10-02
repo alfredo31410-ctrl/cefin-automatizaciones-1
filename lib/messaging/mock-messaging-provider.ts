@@ -7,8 +7,8 @@ import type { MessagingProvider, ScheduleMessageInput } from "./provider";
  * futuro FunnelchatMessagingProvider cuando exista una API verificada.
  */
 export class MockMessagingProvider implements MessagingProvider {
-  async listGroups() {
-    return (await appRepository.getDatabase()).groups;
+  async listGroups(lineId: string) {
+    return (await appRepository.getDatabase()).groups.filter((group) => group.lineId === lineId);
   }
 
   async scheduleMessage(input: ScheduleMessageInput) {

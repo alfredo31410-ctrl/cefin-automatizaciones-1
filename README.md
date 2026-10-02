@@ -1,12 +1,21 @@
 # CEFIN Automatizaciones
 
-Aplicación interna para crear, revisar y administrar secuencias programadas de mensajes destinadas a grupos de WhatsApp. Este repositorio es independiente de CEFIN WEB y no tiene relación con Meta Ads.
+Aplicación interna para crear, revisar y administrar secuencias programadas de mensajes destinadas a grupos de distintas líneas o marcas.
 
-> **El MVP no realiza envíos reales de WhatsApp.** Todos los estados y resultados de envío son simulaciones locales.
+> **La V1.1 no realiza envíos reales de WhatsApp.** Todos los estados y resultados de envío son simulaciones locales.
 
-## Objetivo del MVP
+## Alcance V1.1
 
-Validar la experiencia de usuario, el modelo de dominio y el flujo completo de una automatización antes de conectar un proveedor real de mensajería. Incluye autenticación demo, dashboard, CRUD funcional, selección de grupos, programación exacta de disparos, revisión previa, historial y simulación de resultados.
+La aplicación soporta múltiples líneas con aislamiento de grupos, automatizaciones e historial. Incluye autenticación demo, selector global de línea, dashboard contextual, CRUD de automatizaciones, administración de líneas y persistencia JSON server-side.
+
+Líneas demo iniciales:
+
+- CEFIN
+- Cressara
+- EBIA
+- DocLevel
+
+Las líneas viven en la capa de datos y pueden crearse, renombrarse, activarse y desactivarse desde `/lineas`. No son constantes permanentes del producto.
 
 ## Stack
 
@@ -35,7 +44,7 @@ Correo: admin@cefin.com.mx
 Contraseña: demo2026
 ```
 
-La sesión demo utiliza una cookie `httpOnly`. No almacena contraseñas reales ni es un sistema de autenticación apto para producción.
+La sesión demo y la línea activa utilizan cookies `httpOnly`. No se usa `localStorage`. La autenticación no es apta para producción.
 
 ## Arquitectura
 
@@ -43,54 +52,44 @@ La sesión demo utiliza una cookie `httpOnly`. No almacena contraseñas reales n
 app/
   (app)/                   Vistas internas protegidas
   api/auth/                Inicio y cierre de sesión demo
-  api/state/               Acceso a la persistencia local
-components/                Shell, UI y flujos interactivos
+  api/state/               Datos y cookie de línea activa
+components/                Shell, selector global y flujos interactivos
 lib/
   auth/                    Configuración de autenticación demo
-  data/                    Seeds realistas
-  domain/                  Entidades, catálogos, fechas y validaciones
+  data/                    Seeds multilínea
+  domain/                  Entidades, invariantes, catálogos y fechas
   messaging/               Contrato MessagingProvider y provider mock
-  repositories/            Contrato de repositorio e implementación JSON
-proxy.ts                   Estructura de protección de rutas
+  repositories/            Contrato e implementación JSON
+proxy.ts                   Protección de rutas
 ```
 
-La UI consume una capa HTTP local y no depende de `localStorage`. `JsonAppRepository` genera `.data/mvp-state.json` a partir de los seeds versionados la primera vez que se usa y serializa sus escrituras en el proceso local. La carpeta `.data` está ignorada por Git. La implementación puede sustituirse posteriormente por PostgreSQL/Supabase sin cambiar los componentes.
+## Modelo multilínea
 
-## Modelo de dominio
+`Line` es la entidad central. `Group`, `Automation` y `EventLog` requieren `lineId`; los disparos pertenecen a una automatización y no duplican esa relación.
 
-### Etiquetas oficiales
+La validación de dominio y repositorio impide guardar una automatización con grupos de otra línea, exige slugs únicos y evita desactivar la última línea activa. Una línea inactiva desaparece del selector de trabajo, pero conserva sus datos y permanece visible en administración.
+
+El JSON V1 se migra automáticamente al esquema V1.1 al leerlo: los datos existentes se conservan bajo CEFIN y se agregan los seeds de las líneas restantes. Las escrituras continúan serializadas en `.data/mvp-state.json`, archivo ignorado por Git.
+
+## Etiquetas oficiales
 
 - Preventa (`PREVENTA`)
 - Venta (`VENTA`)
 - Retargeting (`RETARGETING`)
 - Calentamiento (`CALENTAMIENTO`)
 
-No se admiten etiquetas arbitrarias.
-
-### Estados de automatización
-
-`DRAFT`, `SCHEDULED`, `ACTIVE`, `PAUSED`, `COMPLETED`, `ERROR` y `CANCELLED`.
-
-### Disparos
-
-Un disparo representa un mensaje que se ejecutaría en una fecha y hora exactas. Contiene contenido, programación, estado y metadata opcional de un adjunto. Sus estados son `PENDING`, `PROCESSING`, `SENT`, `FAILED` y `CANCELLED`.
-
-La zona horaria de negocio está centralizada como `America/Mexico_City`. El modelo queda preparado para añadir programación relativa en otra fase.
+Las etiquetas son globales y no pertenecen a una línea.
 
 ## Mensajería
 
-`MessagingProvider` define el límite de integración mediante:
+`MessagingProvider` recibe contexto de línea y mantiene el límite de integración mediante:
 
-- `listGroups()`
+- `listGroups(lineId)`
 - `scheduleMessage()`
 - `cancelScheduledMessage()`
 - `healthCheck()`
 
-La implementación actual es `MockMessagingProvider`. No hace solicitudes externas y no transmite mensajes. Un futuro `FunnelchatMessagingProvider` deberá implementar este contrato únicamente cuando exista una API oficial verificada.
-
-## Datos demo
-
-El seed incluye ocho grupos, cinco automatizaciones con distintas etiquetas/estados, disparos pasados y próximos, y eventos de historial. Los mensajes son ficticios y no contienen información sensible.
+La única implementación es `MockMessagingProvider`. Filtra grupos por línea, no hace solicitudes externas y nunca transmite mensajes. No existe `FunnelchatMessagingProvider` ni conexión activa con WhatsApp Business.
 
 ## Scripts de calidad
 
@@ -98,17 +97,17 @@ El seed incluye ocho grupos, cinco automatizaciones con distintas etiquetas/esta
 npm run lint
 npx tsc --noEmit
 npm run build
+git diff --check
 ```
 
 ## Limitaciones actuales
 
-- La autenticación es demostrativa y no es segura para producción.
-- La persistencia JSON es sólo para desarrollo local y no soporta concurrencia distribuida.
+- Autenticación exclusivamente demostrativa.
+- Persistencia JSON solo para desarrollo local, sin concurrencia distribuida.
 - Los adjuntos guardan únicamente metadata; no se suben archivos.
-- No existe integración con Funnelchat ni WhatsApp Business.
-- No hay envíos, scraping, automatización de WhatsApp Web, IA, Meta Ads ni n8n.
-- La programación cambia estados de manera manual/simulada; no existe un worker de ejecución real.
+- No existen Supabase, PostgreSQL, Funnelchat, WhatsApp real, IA, Meta Ads ni n8n.
+- No existe un worker de ejecución; la programación solo simula estados.
 
-## Próxima integración con Funnelchat
+## Siguiente etapa técnica
 
-El siguiente paso técnico es verificar con Funnelchat la existencia, autenticación, límites y capacidades de una API oficial. Con evidencia suficiente, se podrá diseñar `FunnelchatMessagingProvider` y una persistencia productiva sin acoplar el dominio o la UI al proveedor.
+Después de aprobar funcional y visualmente V1.1, definir el esquema PostgreSQL/Supabase para `Line`, `User`, `Group`, `Automation`, `AutomationGroup`, `Trigger` y `EventLog`, conservando las invariantes multilínea ya implementadas.

@@ -22,8 +22,18 @@ export type EventType =
   | "TRIGGER_SIMULATED_SENT"
   | "TRIGGER_SIMULATED_FAILED";
 
+export interface Line {
+  id: string;
+  name: string;
+  slug: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Group {
   id: string;
+  lineId: string;
   name: string;
   externalId?: string;
   memberCount?: number;
@@ -50,6 +60,7 @@ export interface Trigger {
 
 export interface Automation {
   id: string;
+  lineId: string;
   name: string;
   type: AutomationType;
   status: AutomationStatus;
@@ -64,6 +75,7 @@ export interface Automation {
 
 export interface EventLog {
   id: string;
+  lineId: string;
   automationId: string;
   automationName: string;
   type: EventType;
@@ -72,10 +84,12 @@ export interface EventLog {
 }
 
 export interface AppDatabase {
+  lines: Line[];
   groups: Group[];
   automations: Automation[];
   eventLogs: EventLog[];
   version: number;
+  schemaVersion: 2;
 }
 
 export interface AutomationInput {

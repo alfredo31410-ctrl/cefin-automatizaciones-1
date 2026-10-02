@@ -3,13 +3,9 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "CEFIN Automatizaciones",
-  description: "Administración local de automatizaciones de mensajería para CEFIN.",
+  description: "Administración local multilínea de automatizaciones de mensajería.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
-  return (
-    <html lang="es" className="h-full antialiased">
-      <body className="min-h-full flex flex-col">{children}</body>
-    </html>
-  );
+  return <html lang="es" className="h-full antialiased"><body className="min-h-full flex flex-col">{children}</body></html>;
 }
