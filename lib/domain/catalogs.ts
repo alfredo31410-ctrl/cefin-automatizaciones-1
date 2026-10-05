@@ -38,4 +38,7 @@ export const EVENT_LABELS: Record<EventType, string> = {
   AUTOMATION_CANCELLED: "Automatización cancelada",
   TRIGGER_SIMULATED_SENT: "Envío simulado exitoso",
   TRIGGER_SIMULATED_FAILED: "Envío simulado fallido",
+  LINE_CREATED: "Línea creada",
+  LINE_UPDATED: "Línea actualizada",
+  SEED_CREATED: "Datos iniciales creados",
 };

@@ -15,7 +15,6 @@ export interface AutomationPayload {
   groupIds: string[];
   triggers: TriggerInput[];
   activate?: boolean;
-  createdBy?: string | null;
 }
 
 export interface AutomationPatch {
@@ -23,18 +22,20 @@ export interface AutomationPatch {
   type?: AutomationType;
   groupIds?: string[];
   triggers?: TriggerInput[];
+  activate?: boolean;
 }
 
 export class AutomationService {
   constructor(private readonly repository: AppRepository) {}
 
-  async create(payload: AutomationPayload): Promise<AutomationRecord> {
+  async create(payload: AutomationPayload, actorId: string): Promise<AutomationRecord> {
     await this.assertLineAndGroups(payload.lineId, payload.groupIds);
     const status = this.initialStatus(payload.activate ?? false, payload.triggers);
     const now = new Date();
 
     return this.repository.createAutomation({
       ...payload,
+      createdBy: actorId,
       status,
       activatedAt: status === "ACTIVE" || status === "SCHEDULED" ? now : null,
       event: "AUTOMATION_CREATED",
@@ -42,7 +43,7 @@ export class AutomationService {
     });
   }
 
-  async update(id: string, patch: AutomationPatch): Promise<AutomationRecord> {
+  async update(id: string, patch: AutomationPatch, actorId: string): Promise<AutomationRecord> {
     const current = await this.requireAutomation(id);
     if (["COMPLETED", "CANCELLED"].includes(current.status)) {
       throw new AppError(409, "AUTOMATION_FINAL", "Una automatización finalizada o cancelada no se puede editar");
@@ -55,8 +56,8 @@ export class AutomationService {
       lineId: current.lineId,
       name: patch.name ?? current.name,
       type: patch.type ?? current.type,
-      status: current.status,
-      createdBy: current.createdBy,
+      status: patch.activate ? this.initialStatus(true, patch.triggers ?? current.triggers) : current.status,
+      createdBy: actorId,
       groupIds,
       triggers: patch.triggers ?? current.triggers.map((trigger) => ({
         id: trigger.id,
@@ -65,17 +66,19 @@ export class AutomationService {
         status: trigger.status,
         attachmentMetadata: trigger.attachmentMetadata,
       })),
-      activatedAt: current.activatedAt,
+      activatedAt: patch.activate ? current.activatedAt ?? new Date() : current.activatedAt,
       finishedAt: current.finishedAt,
       resumeStatus: current.resumeStatus,
-      event: "AUTOMATION_UPDATED",
-      eventDescription: `Automatización “${patch.name ?? current.name}” actualizada`,
+      event: patch.activate ? "AUTOMATION_ACTIVATED" : "AUTOMATION_UPDATED",
+      eventDescription: patch.activate
+        ? `Automatización “${patch.name ?? current.name}” activada`
+        : `Automatización “${patch.name ?? current.name}” actualizada`,
     };
 
     return this.repository.updateAutomation(id, input);
   }
 
-  async duplicate(id: string): Promise<AutomationRecord> {
+  async duplicate(id: string, actorId: string): Promise<AutomationRecord> {
     const current = await this.requireAutomation(id);
     await this.assertLineAndGroups(current.lineId, current.groupIds);
 
@@ -84,7 +87,7 @@ export class AutomationService {
       name: `${current.name} (copia)`,
       type: current.type,
       status: "DRAFT",
-      createdBy: current.createdBy,
+      createdBy: actorId,
       groupIds: current.groupIds,
       triggers: current.triggers.map((trigger) => ({
         content: trigger.content,
@@ -98,7 +101,7 @@ export class AutomationService {
     });
   }
 
-  async pause(id: string): Promise<AutomationRecord> {
+  async pause(id: string, actorId: string): Promise<AutomationRecord> {
     const current = await this.requireAutomation(id);
     if (current.status !== "ACTIVE" && current.status !== "SCHEDULED") {
       throw new AppError(409, "INVALID_STATUS_TRANSITION", "Solo se puede pausar una automatización activa o programada");
@@ -109,10 +112,11 @@ export class AutomationService {
       resumeStatus: current.status,
       event: "AUTOMATION_PAUSED",
       description: `Automatización “${current.name}” pausada`,
+      actorId,
     });
   }
 
-  async resume(id: string): Promise<AutomationRecord> {
+  async resume(id: string, actorId: string): Promise<AutomationRecord> {
     const current = await this.requireAutomation(id);
     if (current.status !== "PAUSED") {
       throw new AppError(409, "INVALID_STATUS_TRANSITION", "Solo se puede reanudar una automatización pausada");
@@ -125,10 +129,11 @@ export class AutomationService {
       activatedAt: current.activatedAt ?? new Date(),
       event: "AUTOMATION_RESUMED",
       description: `Automatización “${current.name}” reanudada`,
+      actorId,
     });
   }
 
-  async cancel(id: string): Promise<AutomationRecord> {
+  async cancel(id: string, actorId: string): Promise<AutomationRecord> {
     const current = await this.requireAutomation(id);
     if (current.status === "COMPLETED" || current.status === "CANCELLED") {
       throw new AppError(409, "INVALID_STATUS_TRANSITION", "La automatización ya está finalizada o cancelada");
@@ -141,6 +146,7 @@ export class AutomationService {
       cancelPendingTriggers: true,
       event: "AUTOMATION_CANCELLED",
       description: `Automatización “${current.name}” cancelada`,
+      actorId,
     });
   }
 

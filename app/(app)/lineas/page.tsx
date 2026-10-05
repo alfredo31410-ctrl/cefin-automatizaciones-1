@@ -6,12 +6,13 @@ import { LoadingState, PageHeader } from "@/components/ui";
 import { formatDate } from "@/lib/domain/date";
 
 export default function LinesPage() {
-  const { database, selectedLineId, loading, saving, createLine, renameLine, toggleLineActive, selectLine } = useApp();
+  const { database, selectedLineId, loading, saving, isAdmin, createLine, renameLine, toggleLineActive, selectLine } = useApp();
   const [name, setName] = useState("");
   const [editingId, setEditingId] = useState("");
   const [editingName, setEditingName] = useState("");
 
   if (loading || !database) return <div className="page"><PageHeader title="Líneas" action={false} /><LoadingState /></div>;
+  if (!isAdmin) return <div className="page"><PageHeader title="Líneas" action={false} /><div className="card empty-state"><strong>Permisos insuficientes</strong><p>Solo un administrador puede crear o modificar líneas.</p></div></div>;
 
   async function submit(event: FormEvent) {
     event.preventDefault();

@@ -1,41 +1,60 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
-import { DEMO_EMAIL, DEMO_PASSWORD } from "@/lib/auth/demo-auth";
+import { FormEvent, Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { apiClient, ApiError } from "@/lib/api/client";
 
-export default function LoginPage() {
+function initialMessage(reason: string | null): string {
+  if (reason === "session") return "Tu sesión terminó. Inicia sesión nuevamente.";
+  if (reason === "api") return "La API no está disponible en este momento.";
+  return "";
+}
+
+function LoginForm() {
   const router = useRouter();
-  const [email, setEmail] = useState(DEMO_EMAIL);
-  const [password, setPassword] = useState(DEMO_PASSWORD);
-  const [error, setError] = useState("");
+  const searchParams = useSearchParams();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState(() => initialMessage(searchParams.get("reason")));
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   async function submit(event: FormEvent) {
-    event.preventDefault(); setLoading(true); setError("");
-    const response = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
-    setLoading(false);
-    if (!response.ok) { const body = (await response.json()) as { error?: string }; setError(body.error ?? "No fue posible iniciar sesión."); return; }
-    router.push("/dashboard"); router.refresh();
+    event.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      await apiClient.login(email, password);
+      setSuccess(true);
+      router.replace("/dashboard");
+      router.refresh();
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : "No fue posible iniciar sesión.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return <main className="login-page">
     <section className="login-panel" aria-labelledby="login-title">
       <div className="login-brand"><span className="brand-mark">C</span><span><strong>CEFIN</strong><small>Automatizaciones</small></span></div>
-      <div className="login-heading"><span className="eyebrow">Acceso interno</span><h1 id="login-title">Bienvenido de nuevo</h1><p>Administra las secuencias programadas para tus grupos de WhatsApp.</p></div>
+      <div className="login-heading"><span className="eyebrow">Acceso interno</span><h1 id="login-title">Bienvenido de nuevo</h1><p>Ingresa con las credenciales asignadas por un administrador.</p></div>
       <form onSubmit={submit}>
-        <label htmlFor="email">Correo electrónico</label><input id="email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
+        <label htmlFor="email">Correo electrónico</label><input id="email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoFocus />
         <label htmlFor="password">Contraseña</label><input id="password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required />
         {error && <p className="form-error" role="alert">{error}</p>}
-        <button className="button button-primary button-wide" disabled={loading}>{loading ? "Ingresando…" : "Iniciar sesión"}</button>
+        <button className="button button-primary button-wide" disabled={loading || success}>{success ? "Acceso correcto…" : loading ? "Ingresando…" : "Iniciar sesión"}</button>
       </form>
-      <div className="demo-credentials"><strong>Credenciales demo</strong><span>{DEMO_EMAIL}</span><span>Contraseña: {DEMO_PASSWORD}</span></div>
-      <p className="security-note">Autenticación exclusiva del MVP local. No es válida para producción.</p>
+      <p className="security-note">Sesión protegida con cookie HttpOnly. La contraseña no se almacena en el navegador.</p>
     </section>
     <aside className="login-aside" aria-label="Información del producto">
-      <div><span className="aside-pill">MVP local</span><h2>Tu operación de mensajes, clara y en control.</h2><p>Diseña, programa y revisa automatizaciones desde un solo lugar.</p></div>
+      <div><span className="aside-pill">V2.1B</span><h2>Tu operación de mensajes, clara y en control.</h2><p>Diseña, programa y revisa automatizaciones desde un solo lugar.</p></div>
       <div className="aside-preview"><div className="preview-top"><span>Próximos disparos</span><small>Esta semana</small></div>{["Master IA — Venta", "Contabilidad Electrónica", "Estratega Fiscal"].map((item, index) => <div className="preview-row" key={item}><span className={`preview-icon preview-${index}`}>↗</span><span><strong>{item}</strong><small>{index + 2} grupos · {10 + index * 3}:00</small></span><b>{index === 0 ? "Hoy" : `Día ${index + 2}`}</b></div>)}</div>
-      <div className="no-send"><span>✓</span><p><strong>Entorno seguro de simulación</strong><br />Este MVP no realiza envíos reales de WhatsApp.</p></div>
+      <div className="no-send"><span>✓</span><p><strong>Entorno seguro de simulación</strong><br />Esta versión no realiza envíos reales de WhatsApp.</p></div>
     </aside>
   </main>;
+}
+
+export default function LoginPage() {
+  return <Suspense fallback={<main className="login-page" />}><LoginForm /></Suspense>;
 }

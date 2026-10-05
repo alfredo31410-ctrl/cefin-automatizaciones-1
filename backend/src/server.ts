@@ -1,5 +1,5 @@
 import { buildApp } from "./app.js";
-import { parseAllowedOrigins, readEnvironment } from "./config/env.js";
+import { parseAllowedOrigins, readEnvironment, useSecureSessionCookie } from "./config/env.js";
 import { createDatabaseConnection } from "./db/client.js";
 import { PostgresAppRepository } from "./repositories/postgres-app-repository.js";
 
@@ -10,6 +10,8 @@ async function main(): Promise<void> {
     repository: new PostgresAppRepository(connection.db),
     healthCheck: connection.healthCheck,
     allowedOrigins: parseAllowedOrigins(environment.APP_ORIGIN),
+    sessionTtlHours: environment.SESSION_TTL_HOURS,
+    secureCookie: useSecureSessionCookie(environment),
     logger: true,
     onClose: connection.close,
   });

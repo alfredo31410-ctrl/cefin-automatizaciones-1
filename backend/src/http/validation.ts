@@ -4,6 +4,25 @@ import { AUTOMATION_TYPES } from "../domain/types.js";
 
 export const idParamsSchema = z.object({ id: z.uuid() });
 export const lineParamsSchema = z.object({ lineId: z.uuid() });
+export const triggerParamsSchema = z.object({ id: z.uuid(), triggerId: z.uuid() });
+
+export const loginSchema = z.object({
+  email: z.email().trim().max(320),
+  password: z.string().min(1).max(1_024),
+}).strict();
+
+export const createLineSchema = z.object({
+  name: z.string().trim().min(1).max(160),
+}).strict();
+
+export const updateLineSchema = z.object({
+  name: z.string().trim().min(1).max(160).optional(),
+  active: z.boolean().optional(),
+}).strict().refine((payload) => Object.keys(payload).length > 0, "Debe enviarse al menos un campo");
+
+export const simulateTriggerSchema = z.object({
+  status: z.enum(["SENT", "FAILED"]),
+}).strict();
 
 const triggerSchema = z.object({
   content: z.string().trim().min(1).max(10_000),
@@ -25,6 +44,7 @@ export const updateAutomationSchema = z.object({
   type: z.enum(AUTOMATION_TYPES).optional(),
   groupIds: z.array(z.uuid()).min(1).max(500).optional(),
   triggers: z.array(triggerSchema).min(1).max(500).optional(),
+  activate: z.boolean().optional(),
 }).strict().refine((payload) => Object.keys(payload).length > 0, "Debe enviarse al menos un campo");
 
 export function parseRequest<T>(schema: z.ZodType<T>, input: unknown): T {

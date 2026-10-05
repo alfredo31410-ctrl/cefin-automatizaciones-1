@@ -10,6 +10,34 @@ export type TriggerStatus = (typeof TRIGGER_STATUSES)[number];
 export const USER_LINE_ROLES = ["ADMIN", "OPERATOR", "VIEWER"] as const;
 export type UserLineRole = (typeof USER_LINE_ROLES)[number];
 
+export interface UserRecord {
+  id: string;
+  email: string;
+  name: string;
+  passwordHash: string;
+  active: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface UserLineAccess {
+  lineId: string;
+  role: UserLineRole;
+}
+
+export interface AuthenticatedUser {
+  id: string;
+  email: string;
+  name: string;
+  lineAccess: UserLineAccess[];
+}
+
+export interface SessionPrincipal {
+  sessionId: string;
+  expiresAt: Date;
+  user: AuthenticatedUser;
+}
+
 export interface LineRecord {
   id: string;
   name: string;
@@ -66,6 +94,13 @@ export interface EventLogRecord {
   description: string;
   metadata: Record<string, unknown> | null;
   createdAt: Date;
+}
+
+export interface LineWrite {
+  name: string;
+  slug: string;
+  active?: boolean;
+  actorId: string;
 }
 
 export interface TriggerInput {

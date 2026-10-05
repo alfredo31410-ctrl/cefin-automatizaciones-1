@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+import { apiClient } from "@/lib/api/client";
 import { AppProvider, useApp } from "./app-provider";
 
 const navigation = [
@@ -10,20 +11,28 @@ const navigation = [
   { href: "/automatizaciones", label: "Automatizaciones", icon: "⚡" },
   { href: "/grupos", label: "Grupos", icon: "◉" },
   { href: "/historial", label: "Historial", icon: "◷" },
-  { href: "/lineas", label: "Líneas", icon: "◆" },
+  { href: "/lineas", label: "Líneas", icon: "◆", adminOnly: true },
 ];
+
+function initials(name: string) {
+  return name.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "U";
+}
 
 function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { database, selectedLineId, selectedLine, selectLine, saving, error } = useApp();
+  const { database, user, isAdmin, selectedLineId, selectedLine, selectLine, saving, error, loading } = useApp();
   const [open, setOpen] = useState(false);
 
   async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/login");
-    router.refresh();
+    try { await apiClient.logout(); } finally {
+      router.replace("/login");
+      router.refresh();
+    }
   }
+
+  const visibleNavigation = navigation.filter((item) => !item.adminOnly || isAdmin);
+  const hasLines = (database?.lines.filter((line) => line.active).length ?? 0) > 0;
 
   return <div className="app-frame">
     <button className="mobile-menu" onClick={() => setOpen(true)} aria-label="Abrir navegación" aria-expanded={open}>☰</button>
@@ -32,15 +41,15 @@ function Shell({ children }: { children: React.ReactNode }) {
       <div className="brand"><span className="brand-mark">C</span><span><strong>CEFIN</strong><small>Automatizaciones</small></span></div>
       <label className="line-selector">
         <span>Línea de trabajo</span>
-        <select aria-label="Línea de trabajo activa" value={selectedLineId} disabled={!database || saving} onChange={(event) => void selectLine(event.target.value)}>
+        <select aria-label="Línea de trabajo activa" value={selectedLineId} disabled={!database || saving || !hasLines} onChange={(event) => void selectLine(event.target.value)}>
           {database?.lines.filter((line) => line.active).map((line) => <option key={line.id} value={line.id}>{line.name}</option>)}
         </select>
-        <small>Contexto actual: <strong>{selectedLine?.name ?? "Cargando…"}</strong></small>
+        <small>Contexto actual: <strong>{selectedLine?.name ?? (loading ? "Cargando…" : "Sin acceso")}</strong></small>
       </label>
-      <nav aria-label="Navegación principal">{navigation.map((item) => { const active = pathname === item.href || (item.href === "/automatizaciones" && pathname.startsWith("/automatizaciones")); return <Link key={item.href} href={item.href} className={active ? "active" : ""} onClick={() => setOpen(false)}><span aria-hidden>{item.icon}</span>{item.label}</Link>; })}</nav>
-      <div className="sidebar-footer"><div className="user-row"><span className="avatar">AC</span><span><strong>Administrador</strong><small>admin@cefin.com.mx</small></span></div><button onClick={logout}><span aria-hidden>↪</span> Cerrar sesión</button><div className="mock-label"><span /> Modo local · Sin envíos reales</div></div>
+      <nav aria-label="Navegación principal">{visibleNavigation.map((item) => { const active = pathname === item.href || (item.href === "/automatizaciones" && pathname.startsWith("/automatizaciones")); return <Link key={item.href} href={item.href} className={active ? "active" : ""} onClick={() => setOpen(false)}><span aria-hidden>{item.icon}</span>{item.label}</Link>; })}</nav>
+      <div className="sidebar-footer"><div className="user-row"><span className="avatar">{initials(user?.name ?? "Usuario")}</span><span><strong>{user?.name ?? "Usuario"}</strong><small>{user?.email ?? "Cargando…"}</small></span></div><button onClick={() => void logout()}><span aria-hidden>↪</span> Cerrar sesión</button><div className="mock-label"><span /> PostgreSQL · Sin envíos reales</div></div>
     </aside>
-    <main className="main-content">{saving && <div className="save-indicator" role="status">Guardando…</div>}{error && <div className="global-error" role="alert">{error}</div>}{children}</main>
+    <main className="main-content">{saving && <div className="save-indicator" role="status">Guardando…</div>}{error && <div className="global-error" role="alert">{error}</div>}{!loading && database && !hasLines ? <div className="page"><div className="card empty-state"><strong>Sin líneas disponibles</strong><p>Tu cuenta no tiene acceso a una línea activa. Solicita acceso a un administrador.</p></div></div> : children}</main>
   </div>;
 }
 

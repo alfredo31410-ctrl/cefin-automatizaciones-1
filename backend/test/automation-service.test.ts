@@ -15,7 +15,7 @@ function validPayload() {
 describe("AutomationService", () => {
   it("crea una automatización válida", async () => {
     const repository = new InMemoryAppRepository();
-    const created = await new AutomationService(repository).create(validPayload());
+    const created = await new AutomationService(repository).create(validPayload(), FIXTURE_IDS.admin);
 
     expect(created.status).toBe("DRAFT");
     expect(created.lineId).toBe(FIXTURE_IDS.lineA);
@@ -25,7 +25,7 @@ describe("AutomationService", () => {
 
   it("rechaza un grupo perteneciente a otra línea", async () => {
     const service = new AutomationService(new InMemoryAppRepository());
-    const action = service.create({ ...validPayload(), groupIds: [FIXTURE_IDS.groupB] });
+    const action = service.create({ ...validPayload(), groupIds: [FIXTURE_IDS.groupB] }, FIXTURE_IDS.admin);
 
     await expect(action).rejects.toMatchObject({ statusCode: 400, code: "CROSS_LINE_GROUP" });
   });
@@ -33,8 +33,8 @@ describe("AutomationService", () => {
   it("duplica como borrador con triggers pendientes", async () => {
     const repository = new InMemoryAppRepository();
     const service = new AutomationService(repository);
-    const original = await service.create({ ...validPayload(), activate: true });
-    const duplicated = await service.duplicate(original.id);
+    const original = await service.create({ ...validPayload(), activate: true }, FIXTURE_IDS.admin);
+    const duplicated = await service.duplicate(original.id, FIXTURE_IDS.admin);
 
     expect(duplicated.id).not.toBe(original.id);
     expect(duplicated.name).toBe("Campaña de prueba (copia)");
@@ -45,13 +45,13 @@ describe("AutomationService", () => {
   it("pausa y reanuda conservando el estado anterior", async () => {
     const repository = new InMemoryAppRepository();
     const service = new AutomationService(repository);
-    const created = await service.create({ ...validPayload(), activate: true });
+    const created = await service.create({ ...validPayload(), activate: true }, FIXTURE_IDS.admin);
 
-    const paused = await service.pause(created.id);
+    const paused = await service.pause(created.id, FIXTURE_IDS.admin);
     expect(paused.status).toBe("PAUSED");
     expect(paused.resumeStatus).toBe("SCHEDULED");
 
-    const resumed = await service.resume(created.id);
+    const resumed = await service.resume(created.id, FIXTURE_IDS.admin);
     expect(resumed.status).toBe("SCHEDULED");
     expect(resumed.resumeStatus).toBeNull();
   });

@@ -11,16 +11,7 @@ export type AutomationStatus =
 
 export type TriggerStatus = "PENDING" | "PROCESSING" | "SENT" | "FAILED" | "CANCELLED";
 
-export type EventType =
-  | "AUTOMATION_CREATED"
-  | "AUTOMATION_UPDATED"
-  | "AUTOMATION_ACTIVATED"
-  | "AUTOMATION_PAUSED"
-  | "AUTOMATION_RESUMED"
-  | "AUTOMATION_DUPLICATED"
-  | "AUTOMATION_CANCELLED"
-  | "TRIGGER_SIMULATED_SENT"
-  | "TRIGGER_SIMULATED_FAILED";
+export type EventType = string;
 
 export interface Line {
   id: string;
@@ -49,7 +40,7 @@ export interface Attachment {
 
 export interface Trigger {
   id: string;
-  automationId: string;
+  automationId?: string;
   content: string;
   scheduledAt: string;
   status: TriggerStatus;
@@ -76,7 +67,7 @@ export interface Automation {
 export interface EventLog {
   id: string;
   lineId: string;
-  automationId: string;
+  automationId?: string;
   automationName: string;
   type: EventType;
   description: string;

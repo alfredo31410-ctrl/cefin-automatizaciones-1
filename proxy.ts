@@ -1,20 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
-import { DEMO_COOKIE, DEMO_SESSION_VALUE } from "@/lib/auth/demo-auth";
+import { SESSION_COOKIE_NAME } from "@/lib/auth/session";
 
-export function proxy(request: NextRequest) {
-  const authenticated = request.cookies.get(DEMO_COOKIE)?.value === DEMO_SESSION_VALUE;
+function apiOrigin(): string | null {
+  const configured = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
+  if (configured) return configured;
+  return process.env.NODE_ENV === "production" ? null : "http://localhost:3001";
+}
+
+function clearSession(response: NextResponse) {
+  response.cookies.set(SESSION_COOKIE_NAME, "", { expires: new Date(0), path: "/" });
+  return response;
+}
+
+export async function proxy(request: NextRequest) {
   const isLogin = request.nextUrl.pathname === "/login";
-  const isPublicApi = request.nextUrl.pathname.startsWith("/api/auth/");
+  const session = request.cookies.get(SESSION_COOKIE_NAME)?.value;
 
-  if (!authenticated && !isLogin && !isPublicApi) {
-    return NextResponse.redirect(new URL("/login", request.url));
+  if (!session) return isLogin ? NextResponse.next() : NextResponse.redirect(new URL("/login", request.url));
+
+  const origin = apiOrigin();
+  if (!origin) {
+    return isLogin ? clearSession(NextResponse.next()) : clearSession(NextResponse.redirect(new URL("/login?reason=api", request.url)));
   }
-  if (authenticated && isLogin) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+
+  try {
+    const response = await fetch(`${origin}/api/v1/auth/me`, {
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${session}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (response.ok) return isLogin ? NextResponse.redirect(new URL("/dashboard", request.url)) : NextResponse.next();
+  } catch {
+    return isLogin ? NextResponse.next() : NextResponse.redirect(new URL("/login?reason=api", request.url));
   }
-  return NextResponse.next();
+
+  return isLogin
+    ? clearSession(NextResponse.next())
+    : clearSession(NextResponse.redirect(new URL("/login?reason=session", request.url)));
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/login", "/dashboard/:path*", "/automatizaciones/:path*", "/grupos/:path*", "/historial/:path*", "/lineas/:path*"],
 };

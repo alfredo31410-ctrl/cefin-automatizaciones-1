@@ -21,7 +21,7 @@ function migrateDatabase(value: unknown): AppDatabase {
   const legacyGroups = Array.isArray(current.groups) ? current.groups.map((group) => ({ ...group, lineId: group.lineId ?? cefinId })) : [];
   const legacyAutomations = Array.isArray(current.automations) ? current.automations.map((automation) => ({ ...automation, lineId: automation.lineId ?? cefinId })) : [];
   const automationLines = new Map(legacyAutomations.map((automation) => [automation.id, automation.lineId]));
-  const legacyLogs = Array.isArray(current.eventLogs) ? current.eventLogs.map((log) => ({ ...log, lineId: log.lineId ?? automationLines.get(log.automationId) ?? cefinId })) : [];
+  const legacyLogs = Array.isArray(current.eventLogs) ? current.eventLogs.map((log) => ({ ...log, lineId: log.lineId ?? (log.automationId ? automationLines.get(log.automationId) : undefined) ?? cefinId })) : [];
   const additionalLineIds = new Set(demo.lines.filter((line) => line.id !== cefinId).map((line) => line.id));
   const database: AppDatabase = {
     lines: demo.lines,

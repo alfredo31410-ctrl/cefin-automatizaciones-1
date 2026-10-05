@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import type { AppDatabaseClient } from "../db/client.js";
 import {
   automationGroups,
@@ -6,7 +6,10 @@ import {
   eventLogs,
   groups,
   lines,
+  sessions,
   triggers,
+  userLines,
+  users,
 } from "../db/schema.js";
 import { AppError, isPgUniqueViolation } from "../domain/errors.js";
 import type {
@@ -14,10 +17,14 @@ import type {
   AutomationWrite,
   EventLogRecord,
   GroupRecord,
+  LineWrite,
   LineRecord,
+  SessionPrincipal,
   TriggerRecord,
+  UserRecord,
 } from "../domain/types.js";
 import type { AppRepository, StatusTransition } from "./app-repository.js";
+import type { AuthRepository, CreateSessionInput } from "./auth-repository.js";
 
 type AutomationRow = typeof automations.$inferSelect;
 type TriggerRow = typeof triggers.$inferSelect;
@@ -56,7 +63,7 @@ function mapAutomation(row: AutomationRow, groupIds: string[], triggerRows: Trig
   };
 }
 
-export class PostgresAppRepository implements AppRepository {
+export class PostgresAppRepository implements AppRepository, AuthRepository {
   constructor(private readonly db: AppDatabaseClient) {}
 
   async listLines(): Promise<LineRecord[]> {
@@ -67,6 +74,68 @@ export class PostgresAppRepository implements AppRepository {
   async getLine(id: string): Promise<LineRecord | null> {
     const [row] = await this.db.select().from(lines).where(eq(lines.id, id)).limit(1);
     return row ? mapLine(row) : null;
+  }
+
+  async createLine(input: LineWrite): Promise<LineRecord> {
+    try {
+      const id = await this.db.transaction(async (tx) => {
+        const [created] = await tx.insert(lines).values({
+          name: input.name,
+          slug: input.slug,
+          active: input.active ?? true,
+        }).returning({ id: lines.id });
+        if (!created) throw new AppError(500, "INSERT_FAILED", "No se pudo crear la línea");
+
+        await tx.insert(userLines).values({ userId: input.actorId, lineId: created.id, role: "ADMIN" });
+        await tx.insert(eventLogs).values({
+          lineId: created.id,
+          userId: input.actorId,
+          event: "LINE_CREATED",
+          description: `Línea “${input.name}” creada`,
+        });
+        return created.id;
+      });
+      const line = await this.getLine(id);
+      if (!line) throw new AppError(500, "PERSISTENCE_ERROR", "La línea guardada no se pudo recuperar");
+      return line;
+    } catch (error) {
+      this.rethrowDatabaseError(error);
+    }
+  }
+
+  async updateLine(id: string, input: LineWrite): Promise<LineRecord> {
+    try {
+      await this.db.transaction(async (tx) => {
+        const [current] = await tx.select().from(lines).where(eq(lines.id, id)).limit(1);
+        if (!current) throw new AppError(404, "LINE_NOT_FOUND", "Línea no encontrada");
+
+        if (current.active && input.active === false) {
+          const [activeCount] = await tx.select({ value: count() }).from(lines).where(eq(lines.active, true));
+          if ((activeCount?.value ?? 0) <= 1) {
+            throw new AppError(409, "LAST_ACTIVE_LINE", "No se puede desactivar la última línea activa");
+          }
+        }
+
+        await tx.update(lines).set({
+          name: input.name,
+          slug: input.slug,
+          active: input.active ?? current.active,
+          updatedAt: new Date(),
+        }).where(eq(lines.id, id));
+        await tx.insert(eventLogs).values({
+          lineId: id,
+          userId: input.actorId,
+          event: "LINE_UPDATED",
+          description: `Línea “${input.name}” actualizada`,
+          metadata: { active: input.active ?? current.active },
+        });
+      });
+      const line = await this.getLine(id);
+      if (!line) throw new AppError(500, "PERSISTENCE_ERROR", "La línea guardada no se pudo recuperar");
+      return line;
+    } catch (error) {
+      this.rethrowDatabaseError(error);
+    }
   }
 
   async listGroups(lineId: string): Promise<GroupRecord[]> {
@@ -226,7 +295,7 @@ export class PostgresAppRepository implements AppRepository {
       await tx.insert(eventLogs).values({
         lineId: updated.lineId,
         automationId: id,
-        userId: updated.createdBy,
+        userId: input.actorId,
         event: input.event,
         description: input.description,
         metadata: input.metadata ?? null,
@@ -236,9 +305,80 @@ export class PostgresAppRepository implements AppRepository {
     return this.requireHydrated(id);
   }
 
+  async simulateTrigger(automationId: string, triggerId: string, status: "SENT" | "FAILED", actorId: string): Promise<AutomationRecord> {
+    await this.db.transaction(async (tx) => {
+      const [automation] = await tx.select({ lineId: automations.lineId, name: automations.name })
+        .from(automations).where(eq(automations.id, automationId)).limit(1);
+      if (!automation) throw new AppError(404, "AUTOMATION_NOT_FOUND", "Automatización no encontrada");
+
+      const [updated] = await tx.update(triggers).set({ status, updatedAt: new Date() }).where(and(
+        eq(triggers.id, triggerId),
+        eq(triggers.automationId, automationId),
+        eq(triggers.status, "PENDING"),
+      )).returning({ id: triggers.id });
+      if (!updated) throw new AppError(409, "TRIGGER_NOT_PENDING", "El disparo no existe o ya no está pendiente");
+
+      await tx.update(automations).set({ updatedAt: new Date() }).where(eq(automations.id, automationId));
+      await tx.insert(eventLogs).values({
+        lineId: automation.lineId,
+        automationId,
+        userId: actorId,
+        event: status === "SENT" ? "TRIGGER_SIMULATED_SENT" : "TRIGGER_SIMULATED_FAILED",
+        description: `El disparo se marcó como ${status === "SENT" ? "enviado" : "fallido"} en simulación. No se envió ningún mensaje real.`,
+        metadata: { triggerId },
+      });
+    });
+
+    return this.requireHydrated(automationId);
+  }
+
   async listEvents(lineId: string): Promise<EventLogRecord[]> {
     const rows = await this.db.select().from(eventLogs).where(eq(eventLogs.lineId, lineId)).orderBy(desc(eventLogs.createdAt));
     return rows.map(mapEvent);
+  }
+
+  async getUserByEmail(email: string): Promise<UserRecord | null> {
+    const [user] = await this.db.select().from(users).where(eq(users.email, email)).limit(1);
+    return user ?? null;
+  }
+
+  async createSession(input: CreateSessionInput): Promise<void> {
+    await this.db.insert(sessions).values(input);
+  }
+
+  async getSessionPrincipal(tokenHash: string, now: Date): Promise<SessionPrincipal | null> {
+    const [row] = await this.db.select({
+      sessionId: sessions.id,
+      expiresAt: sessions.expiresAt,
+      userId: users.id,
+      email: users.email,
+      name: users.name,
+    }).from(sessions).innerJoin(users, eq(users.id, sessions.userId)).where(and(
+      eq(sessions.tokenHash, tokenHash),
+      isNull(sessions.revokedAt),
+      gt(sessions.expiresAt, now),
+      eq(users.active, true),
+    )).limit(1);
+    if (!row) return null;
+
+    const access = await this.db.select({ lineId: userLines.lineId, role: userLines.role })
+      .from(userLines).where(eq(userLines.userId, row.userId));
+    return {
+      sessionId: row.sessionId,
+      expiresAt: row.expiresAt,
+      user: { id: row.userId, email: row.email, name: row.name, lineAccess: access },
+    };
+  }
+
+  async touchSession(sessionId: string, now: Date): Promise<void> {
+    await this.db.update(sessions).set({ lastUsedAt: now }).where(eq(sessions.id, sessionId));
+  }
+
+  async revokeSession(tokenHash: string, now: Date): Promise<void> {
+    await this.db.update(sessions).set({ revokedAt: now }).where(and(
+      eq(sessions.tokenHash, tokenHash),
+      isNull(sessions.revokedAt),
+    ));
   }
 
   private async hydrateAutomation(row: AutomationRow): Promise<AutomationRecord> {
