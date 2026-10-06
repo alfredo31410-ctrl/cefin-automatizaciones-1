@@ -22,6 +22,34 @@ interface BuildAppOptions {
   onClose?: () => Promise<void>;
 }
 
+function publicClientError(statusCode: number) {
+  switch (statusCode) {
+    case 400:
+      return { code: "BAD_REQUEST", message: "La solicitud no es válida" };
+    case 401:
+      return { code: "UNAUTHORIZED", message: "Autenticación requerida" };
+    case 403:
+      return { code: "FORBIDDEN", message: "No tienes permiso para realizar esta acción" };
+    case 404:
+      return { code: "NOT_FOUND", message: "Recurso no encontrado" };
+    case 405:
+      return { code: "METHOD_NOT_ALLOWED", message: "Método no permitido" };
+    case 413:
+      return { code: "PAYLOAD_TOO_LARGE", message: "La solicitud excede el tamaño permitido" };
+    case 415:
+      return { code: "UNSUPPORTED_MEDIA_TYPE", message: "Tipo de contenido no soportado" };
+    case 429:
+      return { code: "RATE_LIMITED", message: "Demasiadas solicitudes" };
+    default:
+      return { code: "REQUEST_REJECTED", message: "La solicitud no pudo ser procesada" };
+  }
+}
+
+function httpStatusCode(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null || !("statusCode" in error)) return undefined;
+  return typeof error.statusCode === "number" ? error.statusCode : undefined;
+}
+
 export async function buildApp(options: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: options.logger ?? false });
 
@@ -45,6 +73,11 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof AppError) {
       return reply.code(error.statusCode).send({ error: { code: error.code, message: error.message } });
+    }
+    const statusCode = httpStatusCode(error);
+    if (statusCode !== undefined && Number.isInteger(statusCode) && statusCode >= 400 && statusCode < 500) {
+      request.log.warn({ err: error }, "Rejected request");
+      return reply.code(statusCode).send({ error: publicClientError(statusCode) });
     }
     request.log.error({ err: error }, "Unhandled request error");
     return reply.code(500).send({

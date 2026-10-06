@@ -1,4 +1,4 @@
-import type { AutomationInput, Line } from "@/lib/domain/types";
+import type { AutomationInput, Line } from "../domain/types";
 
 export interface UserLineAccess {
   lineId: string;
@@ -72,11 +72,15 @@ const API_PREFIX = "/api/backend/api/v1";
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
+    const headers = new Headers(init?.headers);
+    if (typeof init?.body === "string" && !headers.has("content-type")) {
+      headers.set("content-type", "application/json");
+    }
     response = await fetch(`${API_PREFIX}${path}`, {
       ...init,
       credentials: "include",
       cache: "no-store",
-      headers: { "Content-Type": "application/json", ...init?.headers },
+      headers,
     });
   } catch {
     throw new ApiError(503, "API_UNAVAILABLE", "La API no está disponible en este momento");

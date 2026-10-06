@@ -21,14 +21,17 @@ async function forward(request: Request, context: { params: Promise<{ path: stri
     const headers = new Headers({ accept: "application/json" });
     const contentType = request.headers.get("content-type");
     const cookie = request.headers.get("cookie");
-    if (contentType) headers.set("content-type", contentType);
     if (cookie) headers.set("cookie", cookie);
 
-    const hasBody = request.method !== "GET" && request.method !== "HEAD";
+    const requestBody = request.method === "GET" || request.method === "HEAD"
+      ? undefined
+      : await request.arrayBuffer();
+    const hasBody = requestBody !== undefined && requestBody.byteLength > 0;
+    if (hasBody && contentType) headers.set("content-type", contentType);
     const upstream = await fetch(url, {
       method: request.method,
       headers,
-      body: hasBody ? await request.arrayBuffer() : undefined,
+      body: hasBody ? requestBody : undefined,
       cache: "no-store",
       redirect: "manual",
       signal: AbortSignal.timeout(15_000),

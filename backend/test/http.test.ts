@@ -56,6 +56,23 @@ describe("HTTP API", () => {
     ]));
   });
 
+  it("preserva el 400 seguro de Fastify para JSON vacío", async () => {
+    app = await buildApp({ repository: new InMemoryAppRepository(), healthCheck: async () => undefined, allowedOrigins: [], passwordHasher });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/logout",
+      headers: { "content-type": "application/json" },
+      payload: "",
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: { code: "BAD_REQUEST", message: "La solicitud no es válida" },
+    });
+    expect(response.body).not.toContain("FST_ERR_CTP_EMPTY_JSON_BODY");
+    expect(response.body).not.toContain("Body cannot be empty");
+  });
+
   it("crea y recupera una automatización por HTTP", async () => {
     app = await buildApp({ repository: new InMemoryAppRepository(), healthCheck: async () => undefined, allowedOrigins: ["http://localhost:3000"], passwordHasher });
     const cookie = await loginCookie(app, "operator@example.com", "operator");
@@ -118,6 +135,9 @@ describe("HTTP API", () => {
 
     expect(updated.json<{ data: { name: string } }>().data.name).toBe("Ciclo actualizado");
     expect(duplicated.statusCode).toBe(201);
+    expect(paused.statusCode).toBe(200);
+    expect(resumed.statusCode).toBe(200);
+    expect(cancelled.statusCode).toBe(200);
     expect(duplicated.json<{ data: { status: string } }>().data.status).toBe("DRAFT");
     expect(paused.json<{ data: { status: string } }>().data.status).toBe("PAUSED");
     expect(resumed.json<{ data: { status: string } }>().data.status).toBe("SCHEDULED");
