@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { expiredSessionCookieOptions, SESSION_COOKIE_NAME } from "../../../../lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,11 @@ async function forward(request: Request, context: { params: Promise<{ path: stri
     const responseHeaders = new Headers();
     responseHeaders.set("content-type", upstream.headers.get("content-type") ?? "application/json; charset=utf-8");
     for (const value of upstream.headers.getSetCookie()) responseHeaders.append("set-cookie", value);
-    return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
+    const response = new NextResponse(upstream.body, { status: upstream.status, headers: responseHeaders });
+    if (upstream.ok && path.join("/") === "api/v1/auth/logout") {
+      response.cookies.set(SESSION_COOKIE_NAME, "", expiredSessionCookieOptions());
+    }
+    return response;
   } catch {
     return NextResponse.json({
       error: { code: "API_UNAVAILABLE", message: "La API no está disponible en este momento" },

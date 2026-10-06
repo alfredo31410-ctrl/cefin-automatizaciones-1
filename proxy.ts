@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE_NAME } from "@/lib/auth/session";
+import { expiredSessionCookieOptions, SESSION_COOKIE_NAME } from "./lib/auth/session";
 
 function apiOrigin(): string | null {
   const configured = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
@@ -8,7 +8,7 @@ function apiOrigin(): string | null {
 }
 
 function clearSession(response: NextResponse) {
-  response.cookies.set(SESSION_COOKIE_NAME, "", { expires: new Date(0), path: "/" });
+  response.cookies.set(SESSION_COOKIE_NAME, "", expiredSessionCookieOptions());
   return response;
 }
 

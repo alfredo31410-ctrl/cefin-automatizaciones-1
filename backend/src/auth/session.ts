@@ -19,3 +19,10 @@ export function sessionCookieOptions(secure: boolean, maxAgeSeconds: number) {
     maxAge: maxAgeSeconds,
   };
 }
+
+export function expiredSessionCookieOptions(secure: boolean) {
+  return {
+    ...sessionCookieOptions(secure, 0),
+    expires: new Date(0),
+  };
+}

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { AuthService } from "../auth/auth-service.js";
-import { SESSION_COOKIE_NAME, sessionCookieOptions } from "../auth/session.js";
+import { expiredSessionCookieOptions, SESSION_COOKIE_NAME, sessionCookieOptions } from "../auth/session.js";
 import { loginSchema, parseRequest } from "./validation.js";
 
 export interface AuthRouteOptions {
@@ -26,7 +26,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
 
   app.post("/auth/logout", async (request, reply) => {
     await options.service.logout(request.cookies[SESSION_COOKIE_NAME]);
-    return reply.clearCookie(SESSION_COOKIE_NAME, { path: "/" }).send({ ok: true });
+    return reply.clearCookie(SESSION_COOKIE_NAME, expiredSessionCookieOptions(options.secureCookie)).send({ ok: true });
   });
 
   app.get("/auth/me", async (request) => {

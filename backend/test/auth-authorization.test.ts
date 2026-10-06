@@ -59,7 +59,13 @@ describe("authentication and authorization", () => {
     const repository = new InMemoryAppRepository();
     app = await buildApp({ repository, healthCheck: async () => undefined, allowedOrigins: [], passwordHasher, secureCookie: true });
     const response = await login(app, "admin@example.com", "admin");
+    const logout = await app.inject({ method: "POST", url: "/api/v1/auth/logout", headers: { cookie: cookieFrom(response) } });
     expect(response.headers["set-cookie"]).toContain("Secure");
+    expect(logout.headers["set-cookie"]).toContain("HttpOnly");
+    expect(logout.headers["set-cookie"]).toContain("Secure");
+    expect(logout.headers["set-cookie"]).toContain("SameSite=Lax");
+    expect(logout.headers["set-cookie"]).toContain("Path=/");
+    expect(logout.headers["set-cookie"]).toContain("Max-Age=0");
   });
 
   it.each([
@@ -111,9 +117,11 @@ describe("authentication and authorization", () => {
     const loggedIn = await login(instance, "admin@example.com", "admin");
     const cookie = cookieFrom(loggedIn);
     const logout = await instance.inject({ method: "POST", url: "/api/v1/auth/logout", headers: { cookie } });
+    const repeatedLogout = await instance.inject({ method: "POST", url: "/api/v1/auth/logout", headers: { cookie } });
     const me = await instance.inject({ method: "GET", url: "/api/v1/auth/me", headers: { cookie } });
 
     expect(logout.statusCode).toBe(200);
+    expect(repeatedLogout.statusCode).toBe(200);
     expect(repository.sessions[0]?.revokedAt).toBeInstanceOf(Date);
     expect(me.statusCode).toBe(401);
   });

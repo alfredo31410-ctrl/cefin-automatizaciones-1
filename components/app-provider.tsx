@@ -22,6 +22,7 @@ interface AppContextValue {
   error: string;
   isAdmin: boolean;
   canWriteSelectedLine: boolean;
+  clearAuthentication: () => void;
   selectLine: (id: string) => Promise<void>;
   createLine: (name: string) => Promise<string>;
   renameLine: (id: string, name: string) => Promise<void>;
@@ -162,6 +163,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [handleFailure, load]);
 
+  const clearAuthentication = useCallback(() => {
+    databaseRef.current = null;
+    selectedLineIdRef.current = "";
+    setDatabase(null);
+    setUser(null);
+    setSelectedLineId("");
+    setLoading(false);
+    setSaving(false);
+    setError("");
+  }, []);
+
   useEffect(() => {
     let active = true;
     // Initial client synchronization intentionally populates the provider after mount.
@@ -246,10 +258,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const selectedRole = user?.lineAccess.find((access) => access.lineId === selectedLineId)?.role;
   const canWriteSelectedLine = isAdmin || selectedRole === "OPERATOR";
   const value = useMemo<AppContextValue>(() => ({
-    database, user, selectedLineId, selectedLine, loading, saving, error, isAdmin, canWriteSelectedLine,
+    database, user, selectedLineId, selectedLine, loading, saving, error, isAdmin, canWriteSelectedLine, clearAuthentication,
     selectLine, createLine, renameLine, toggleLineActive, saveAutomation, duplicateAutomation,
     togglePause, cancelAutomation, simulateTrigger, refresh,
-  }), [database, user, selectedLineId, selectedLine, loading, saving, error, isAdmin, canWriteSelectedLine, selectLine, createLine, renameLine, toggleLineActive, saveAutomation, duplicateAutomation, togglePause, cancelAutomation, simulateTrigger, refresh]);
+  }), [database, user, selectedLineId, selectedLine, loading, saving, error, isAdmin, canWriteSelectedLine, clearAuthentication, selectLine, createLine, renameLine, toggleLineActive, saveAutomation, duplicateAutomation, togglePause, cancelAutomation, simulateTrigger, refresh]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
