@@ -1,59 +1,66 @@
 import "dotenv/config";
-import { z } from "zod";
+import { eq } from "drizzle-orm";
 import { Argon2PasswordHasher } from "../auth/password.js";
 import { readEnvironment } from "../config/env.js";
+import {
+  AdminConfigurationError,
+  adminSuccessMessage,
+  parseAdminVariables,
+  provisionAdmin,
+  type AdminStore,
+} from "./admin-provisioning.js";
 import { createDatabaseConnection } from "./client.js";
 import { lines, userLines, users } from "./schema.js";
 
-const adminSchema = z.object({
-  ADMIN_EMAIL: z.email().trim().max(320).transform((value) => value.toLowerCase()),
-  ADMIN_NAME: z.string().trim().min(2).max(160),
-  ADMIN_PASSWORD: z.string().min(12).max(1_024),
-});
-
 async function createAdmin(): Promise<void> {
+  const admin = parseAdminVariables(process.env);
   const environment = readEnvironment();
-  const admin = adminSchema.parse(process.env);
   const connection = createDatabaseConnection(environment.DATABASE_URL);
-  const passwordHash = await new Argon2PasswordHasher().hash(admin.ADMIN_PASSWORD);
 
-  try {
-    await connection.db.transaction(async (tx) => {
+  const store: AdminStore = {
+    saveAdmin: async (input) => connection.db.transaction(async (tx) => {
+      const [existing] = await tx.select({ id: users.id }).from(users)
+        .where(eq(users.email, input.email)).limit(1);
       const [user] = await tx.insert(users).values({
-        email: admin.ADMIN_EMAIL,
-        name: admin.ADMIN_NAME,
-        passwordHash,
-        active: true,
+        email: input.email,
+        name: input.name,
+        passwordHash: input.passwordHash,
+        active: input.active,
       }).onConflictDoUpdate({
         target: users.email,
-        set: { name: admin.ADMIN_NAME, passwordHash, active: true, updatedAt: new Date() },
+        set: { name: input.name, passwordHash: input.passwordHash, active: input.active, updatedAt: new Date() },
       }).returning({ id: users.id });
-      if (!user) throw new Error("No fue posible crear el administrador");
+      if (!user) throw new Error("ADMIN_PERSISTENCE_FAILED");
 
       const allLines = await tx.select({ id: lines.id }).from(lines);
       if (allLines.length > 0) {
         await tx.insert(userLines).values(allLines.map((line) => ({
           userId: user.id,
           lineId: line.id,
-          role: "ADMIN" as const,
+          role: input.role,
         }))).onConflictDoUpdate({
           target: [userLines.userId, userLines.lineId],
-          set: { role: "ADMIN" },
+          set: { role: input.role },
         });
       }
-    });
 
-    console.log(`Administrador preparado para ${admin.ADMIN_EMAIL} con acceso a todas las líneas actuales.`);
+      return { created: existing === undefined, assignedLineCount: allLines.length };
+    }),
+  };
+
+  try {
+    const result = await provisionAdmin(admin, store, new Argon2PasswordHasher());
+    console.log(adminSuccessMessage(result));
   } finally {
     await connection.close();
   }
 }
 
 createAdmin().catch((error: unknown) => {
-  if (error instanceof z.ZodError) {
-    console.error("ADMIN_EMAIL, ADMIN_NAME y ADMIN_PASSWORD (mínimo 12 caracteres) son obligatorios.");
+  if (error instanceof AdminConfigurationError) {
+    console.error(error.message);
   } else {
-    console.error(error instanceof Error ? error.message : "No fue posible crear el administrador");
+    console.error("No fue posible crear o actualizar el administrador.");
   }
   process.exit(1);
 });
