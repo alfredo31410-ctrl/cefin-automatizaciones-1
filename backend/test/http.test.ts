@@ -98,6 +98,28 @@ describe("HTTP API", () => {
     expect(detail.json<{ data: { name: string } }>().data.name).toBe("Flujo HTTP");
   });
 
+  it("normaliza America/Mexico_City a un instante UTC antes de persistir", async () => {
+    app = await buildApp({ repository: new InMemoryAppRepository(), healthCheck: async () => undefined, allowedOrigins: [], passwordHasher });
+    const cookie = await loginCookie(app, "operator@example.com", "operator");
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/automations",
+      headers: { cookie },
+      payload: {
+        lineId: FIXTURE_IDS.lineA,
+        name: "Timezone México",
+        type: "VENTA",
+        groupIds: [FIXTURE_IDS.groupA],
+        triggers: [{ content: "Mensaje", scheduledAt: "2026-10-06T10:00:00-06:00" }],
+        activate: true,
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json<{ data: { triggers: Array<{ scheduledAt: string }> } }>().data.triggers[0]?.scheduledAt)
+      .toBe("2026-10-06T16:00:00.000Z");
+  });
+
   it("cubre el flujo API usado por dashboard, cambio de línea y ciclo de automatización", async () => {
     app = await buildApp({ repository: new InMemoryAppRepository(), healthCheck: async () => undefined, allowedOrigins: [], passwordHasher });
     const cookie = await loginCookie(app);

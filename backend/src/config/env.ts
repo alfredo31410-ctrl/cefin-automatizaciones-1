@@ -11,16 +11,32 @@ const environmentSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 
+const workerEnvironmentSchema = z.object({
+  DATABASE_URL: z.string().trim().min(1, "DATABASE_URL es obligatoria"),
+  WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(1_000).max(300_000).default(5_000),
+  WORKER_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(10),
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+});
+
 export type Environment = z.infer<typeof environmentSchema>;
+export type WorkerEnvironment = z.infer<typeof workerEnvironmentSchema>;
+
+function configurationError(result: { error: z.ZodError }): Error {
+  const details = result.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ");
+  return new Error(`Configuración inválida: ${details}`);
+}
 
 export function readEnvironment(source: NodeJS.ProcessEnv = process.env): Environment {
   const result = environmentSchema.safeParse(source);
 
-  if (!result.success) {
-    const details = result.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ");
-    throw new Error(`Configuración inválida: ${details}`);
-  }
+  if (!result.success) throw configurationError(result);
 
+  return result.data;
+}
+
+export function readWorkerEnvironment(source: NodeJS.ProcessEnv = process.env): WorkerEnvironment {
+  const result = workerEnvironmentSchema.safeParse(source);
+  if (!result.success) throw configurationError(result);
   return result.data;
 }
 
